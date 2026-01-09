@@ -1,33 +1,30 @@
-# backend/app/services/ai.py
 import os
-from openai import OpenAI
-from ..models.schemas import ProblemCreate
+import google.generativeai as genai
 import json
 
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+# Configure Gemini API
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+model = genai.GenerativeModel("gemini-1.5-flash")
 
-def generate_variant(original_text: str, original_latex: str, subject: str = "math") -> dict:
+def generate_variant(original_content: str, subject: str = "math") -> dict:
     prompt = f"""
     あなたは数学・物理の教材作成のプロフェッショナルです。
     以下の問題の「構造」や「解法」を維持したまま、数値や設定を変えた「類題」を1つ作成してください。
     
     # 元の問題
     分野: {subject}
-    問題文: {original_text}
-    数式: {original_latex}
+    内容: {original_content}
 
     # 制約
     - 出力は必ずJSON形式のみにしてください。
-    - JSONのキーは "content_text", "content_latex", "solution_text", "solution_latex" です。
-    - 数式はLaTeX形式で記述してください。
-    - 解説(solution)も詳しく作成してください。
+    - キーは "content" (問題文) と "solution" (解説) の2つのみです。
+    - 数式はLaTeX形式を使い、文中の数式は $x^2$ のように、独立した数式は $$x^2$$ のようにドル記号で囲んでください。
+    - Markdown形式で記述してください。
     """
 
-    response = client.chat.completions.create(
-        model="gpt-4o", # または gpt-3.5-turbo
-        messages=[{"role": "system", "content": "JSON形式で出力してください。"},
-                  {"role": "user", "content": prompt}],
-        response_format={"type": "json_object"}
+    response = model.generate_content(
+        prompt,
+        generation_config={"response_mime_type": "application/json"}
     )
 
-    return json.loads(response.choices[0].message.content)
+    return json.loads(response.text)

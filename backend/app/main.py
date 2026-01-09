@@ -3,10 +3,10 @@ from typing import List
 from .database import supabase
 from .models.schemas import ProblemCreate, ProblemResponse
 from fastapi.middleware.cors import CORSMiddleware
+from .services.ai import generate_variant
 
 app = FastAPI(title="ProbForge API")
 
-# ↓↓ 追加 2: CORS設定 ↓↓
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -24,7 +24,6 @@ app.add_middleware(
 def read_root():
     return {"message": "Welcome to ProbForge API (Supabase Client Version)"}
 
-# --- 問題 (Problems) のCRUD ---
 
 @app.post("/problems/", response_model=ProblemResponse)
 def create_problem(problem: ProblemCreate):
@@ -63,32 +62,33 @@ def get_problem(problem_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/problems/{problem_id}/generate", response_model=ProblemResponse)
 def generate_similar_problem(problem_id: str):
-    # 1. 元の問題をSupabaseから取得
     original_res = supabase.table("problems").select("*").eq("id", problem_id).execute()
     if not original_res.data:
         raise HTTPException(status_code=404, detail="Original problem not found")
     
     original = original_res.data[0]
 
-    # 2. AIに類題を作らせる
     try:
         generated_data = generate_variant(
-            original["content_text"], 
-            original["content_latex"], 
+            original["content"],
             original["subject"]
         )
     except Exception as e:
+        import traceback
+        traceback.print_exc() 
         raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
 
-    # 3. 生成された類題をDBに保存 (parent_id を設定)
+    # 3. 保存
     new_problem = {
-        **generated_data,
+        "content": generated_data["content"],
+        "solution": generated_data.get("solution"),
         "subject": original["subject"],
-        "difficulty": original["difficulty"], # いったん同じ難易度
-        "parent_id": problem_id, # ここが重要！親問題と紐付ける
-        "user_id": original["user_id"] # 同じユーザーのものとする
+        "difficulty": original["difficulty"],
+        "parent_id": problem_id,
+        "user_id": original["user_id"]
     }
 
     insert_res = supabase.table("problems").insert(new_problem).execute()
